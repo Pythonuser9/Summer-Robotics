@@ -9,13 +9,16 @@ extern pros::Motor LF;
 extern pros::Motor RF;
 extern pros::Motor LB;
 extern pros::Motor RB;
+extern pros::Motor LM;
+extern pros::Motor RM;
 extern pros::Controller con;
 extern pros::Motor LIFT;
 extern pros::Motor INTAKE;
 extern pros::ADIDigitalOut piston1;
 extern pros::Imu imu2;
 extern pros::ADIDigitalIn selec;
-extern pros:: Vision VIS;
+extern pros::Vision VIS;
+extern pros::Optical optical;
 
 
 #endif

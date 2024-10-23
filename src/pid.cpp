@@ -2,6 +2,7 @@
 #include "main.h"
 #include "pid.h"
 #include "robot.h"
+#include "odometry.h"
 
 
 using namespace pros;
@@ -27,6 +28,15 @@ double prevError2;
 float error2;
 int integral2;
 
+double vKp3;
+double vKi3;
+double vKd3;
+double power3;
+double derivative3;
+double prevError3;
+float error3;
+int integral3;
+
 void setConstants(double kp, double ki, double kd) {
     vKp = kp;
     vKi = ki;
@@ -35,16 +45,20 @@ void setConstants(double kp, double ki, double kd) {
 
 void resetEncoders() {
     LF.tare_position();
+    LM.tare_position();
     LB.tare_position();
     RF.tare_position();
+    RM.tare_position();
     RB.tare_position();
 }
 
-void chasMove(int voltageLF, int voltageLB, int voltageRF, int voltageRB){
+void chasMove(int voltageLF, int voltageLB, int voltageLM, int voltageRF, int voltageRB, int voltageRM){
     LF.move(voltageLF);
     LB.move(voltageLB);
+    LM.move(voltageLM);
     RF.move(voltageRF);
     RB.move(voltageRB);
+    RM.move(voltageRM);
 }
 
 double calcPID(double target, double input, int integralKi, int maxIntegral) {
@@ -98,17 +112,38 @@ if(integral2 >= 0) {
     return power2;
 }
 
+double calcPID3(double target, double input, int integralKi, int maxIntegral) {
+int integral3;
+prevError3 = error3;
+error3 = target - input;
+
+if(std::abs(error3) < integralKi ) {
+    integral3 += error3;
+} else {
+    integral3 = 0;
+}
+
+if(integral3 >= 0) {
+    integral3 = std::min(integral3, maxIntegral);
+} else {
+
+    integral3 = std::max(integral3, -maxIntegral);
+}
+
+    derivative3 = error3 - prevError3;
+
+    power3 = (vKp * error3) + (vKi * integral3) + (vKd * derivative3);
+
+    return power3;
+}
+
 void driveStraight(int target) {
 
     int timeout = 50000;
 
  double x = 0; 
  x = double(abs(target));
- timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
-
-
-
-
+ //timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
 
 double voltage;
 double encoderAvg;
@@ -116,28 +151,44 @@ int count = 0;
 int cycle = 0;
 int time2 = 0;
 
+
 setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
 resetEncoders();
 
  imu2.tare_heading();
 
 double init_heading = imu2.get_heading();
+if (init_heading > 180){
+    init_heading = init_heading - 360;
+}
 double heading_error = 0;
 while(true) {
 
-if(imu2.get_heading() < 180) {
-    heading_error = init_heading - imu2.get_heading();
-}
-else {
-heading_error = ((360 - imu2.get_heading()) - init_heading);
+    double position = imu2.get_heading();
+
+if (position > 180) {
+    position = position - 360;
 }
 
-heading_error = heading_error * 10;
+if((init_heading < 0) && (position > 0)) {
+    if((position - init_heading) >= 180) {
+        init_heading = init_heading + 360;
+        position = imu2.get_heading();
+    }
+} else if ((init_heading > 0) && (position < 0)) {
+    if((init_heading - position) >= 180) {
+        position = imu2.get_heading();
+    }
+}
 
+setConstants(HEADING_KP, HEADING_KI, HEADING_KD);
+heading_error = calcPID2(init_heading, position, HEADING_INTEGRAL_KI, HEADING_MAX_INTEGRAL);
+
+setConstants(STRAIGHT_KP,STRAIGHT_KI,STRAIGHT_KD);
 encoderAvg = (LF.get_position() + RF.get_position()) / 2;
 voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
 
-chasMove (voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error);
+chasMove (voltage + heading_error, voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error, voltage - heading_error);
 if (abs(target - encoderAvg) <= 4) count++;
 if (count >= 20 || time2 > timeout) {
   break;
@@ -164,7 +215,7 @@ void driveStraight2(int target) {
     int timeout = 5000;
 double x = 0; 
  x = double(abs(target));
- timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
+ //timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
 
 double voltage;
 double encoderAvg;
@@ -183,20 +234,32 @@ if (init_heading > 180) {
 double heading_error = 0;
 while(true) {
 
-    
-if(imu2.get_heading() < 180) {
-    heading_error = init_heading - imu2.get_heading();
-}
-else {
-heading_error = ((360 - imu2.get_heading()) - init_heading);
+Odometry();
+
+double position = imu2.get_heading();
+if (position > 180) {
+    position = position - 360;
 }
 
-heading_error = heading_error * 1;
+if((init_heading < 0) && (position > 0)) {
+    if((position - init_heading) >= 180) {
+        init_heading = init_heading + 360;
+        position = imu2.get_heading();
+    }
+} else if ((init_heading > 0) && (position < 0)) {
+    if((init_heading - position) >= 180) {
+        position = imu2.get_heading();
+    }
+}
+
+setConstants(HEADING_KP, HEADING_KI, HEADING_KD);
+heading_error = calcPID2(init_heading, position, HEADING_INTEGRAL_KI, HEADING_MAX_INTEGRAL);
 
 encoderAvg = (LF.get_position() + RF.get_position()) / 2;
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
 voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
 
-chasMove (voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error);
+chasMove (voltage + heading_error, voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error, voltage - heading_error);
 if (abs(target - encoderAvg) <= 4) count++;
 if (count >= 20 || time2 > timeout) {
    break;
@@ -216,6 +279,238 @@ RF.brake();
 RB.brake();
 }
 
+void driveSlow(int target, int speed) {
+
+    int timeout = 5000;
+double x = 0; 
+ x = double(abs(target));
+ //timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
+
+double voltage;
+double encoderAvg;
+int count = 0;
+int cycle = 0;
+int time2 = 0;
+
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+resetEncoders();
+
+
+double init_heading = imu2.get_heading();
+if (init_heading > 180) {
+    init_heading = (360 - init_heading);
+}
+double heading_error = 0;
+while(true) {
+
+Odometry();
+
+double position = imu2.get_heading();
+if (position > 180) {
+    position = position - 360;
+}
+
+if((init_heading < 0) && (position > 0)) {
+    if((position - init_heading) >= 180) {
+        init_heading = init_heading + 360;
+        position = imu2.get_heading();
+    }
+} else if ((init_heading > 0) && (position < 0)) {
+    if((init_heading - position) >= 180) {
+        position = imu2.get_heading();
+    }
+}
+
+setConstants(HEADING_KP, HEADING_KI, HEADING_KD);
+heading_error = calcPID2(init_heading, position, HEADING_INTEGRAL_KI, HEADING_MAX_INTEGRAL);
+
+encoderAvg = (LF.get_position() + RF.get_position()) / 2;
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
+
+if(voltage > 127 * double(speed)/100.0) {
+    voltage = 127 * double(speed)/100.0;
+} else if (voltage < -127 * double(speed)/100.0){
+    voltage = -127 * double(speed)/100.0;
+}
+
+
+chasMove (voltage + heading_error, voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error, voltage - heading_error);
+if (abs(target - encoderAvg) <= 4) count++;
+if (count >= 20 || time2 > timeout) {
+   break;
+}
+
+if (time2 % 50 == 0) {
+con.print(0,0,"ERROR: %f          ", float(heading_error) );
+
+}
+delay(10);
+time2 += 10;
+}
+
+LF.brake();
+LB.brake();
+RF.brake();
+RB.brake();
+}
+
+
+void driveClamp(int target, int percentage) {
+
+    int timeout = 5000;
+double x = 0; 
+ x = double(abs(target));
+ //timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
+
+double voltage;
+double encoderAvg;
+int count = 0;
+int cycle = 0;
+int time2 = 0;
+
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+resetEncoders();
+
+
+double init_heading = imu2.get_heading();
+if (init_heading > 180) {
+    init_heading = (360 - init_heading);
+}
+double heading_error = 0;
+while(true) {
+
+Odometry();
+
+double position = imu2.get_heading();
+if (position > 180) {
+    position = position - 360;
+}
+
+if((init_heading < 0) && (position > 0)) {
+    if((position - init_heading) >= 180) {
+        init_heading = init_heading + 360;
+        position = imu2.get_heading();
+    }
+} else if ((init_heading > 0) && (position < 0)) {
+    if((init_heading - position) >= 180) {
+        position = imu2.get_heading();
+    }
+}
+
+setConstants(HEADING_KP, HEADING_KI, HEADING_KD);
+heading_error = calcPID2(init_heading, position, HEADING_INTEGRAL_KI, HEADING_MAX_INTEGRAL);
+
+encoderAvg = (LF.get_position() + RF.get_position()) / 2;
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
+
+if(abs(encoderAvg) > target * (double(percentage)/100.0)){
+    piston1.set_value(true);
+}
+
+
+chasMove (voltage + heading_error, voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error, voltage - heading_error);
+if (abs(target - encoderAvg) <= 4) count++;
+if (count >= 20 || time2 > timeout) {
+   break;
+}
+
+if (time2 % 50 == 0) {
+con.print(0,0,"ERROR: %f          ", float(heading_error) );
+
+}
+delay(10);
+time2 += 10;
+}
+
+LF.brake();
+LB.brake();
+LM.brake();
+RF.brake();
+RB.brake();
+RM.brake();
+}
+void driveClampS(int target, int percentage, int speed) {
+
+    int timeout = 5000;
+double x = 0; 
+ x = double(abs(target));
+ //timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
+
+double voltage;
+double encoderAvg;
+int count = 0;
+int cycle = 0;
+int time2 = 0;
+
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+resetEncoders();
+
+
+double init_heading = imu2.get_heading();
+if (init_heading > 180) {
+    init_heading = (360 - init_heading);
+}
+double heading_error = 0;
+while(true) {
+
+Odometry();
+
+double position = imu2.get_heading();
+if (position > 180) {
+    position = position - 360;
+}
+
+if((init_heading < 0) && (position > 0)) {
+    if((position - init_heading) >= 180) {
+        init_heading = init_heading + 360;
+        position = imu2.get_heading();
+    }
+} else if ((init_heading > 0) && (position < 0)) {
+    if((init_heading - position) >= 180) {
+        position = imu2.get_heading();
+    }
+}
+
+setConstants(HEADING_KP, HEADING_KI, HEADING_KD);
+heading_error = calcPID2(init_heading, position, HEADING_INTEGRAL_KI, HEADING_MAX_INTEGRAL);
+
+encoderAvg = (LF.get_position() + RF.get_position()) / 2;
+setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
+
+if(abs(encoderAvg) > target * (double(percentage)/100.0)){
+    piston1.set_value(true);
+}
+if(voltage > 127 * double(speed)/100.0) {
+    voltage = 127 * double(speed)/100.0;
+} else if (voltage < -127 * double(speed)/100.0){
+    voltage = -127 * double(speed)/100.0;
+}
+
+chasMove (voltage + heading_error, voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error, voltage - heading_error);
+if (abs(target - encoderAvg) <= 4) count++;
+if (count >= 20 || time2 > timeout) {
+   break;
+}
+
+if (time2 % 50 == 0) {
+con.print(0,0,"ERROR: %f          ", float(heading_error) );
+
+}
+delay(10);
+time2 += 10;
+}
+
+LF.brake();
+LB.brake();
+LM.brake();
+RF.brake();
+RB.brake();
+RM.brake();
+}
+
 void driveStraightC(int target) {
 
 bool over = false;
@@ -223,7 +518,7 @@ bool over = false;
 
 double x = 0; 
  x = double(abs(target));
- timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
+//  timeout = (-0.000000000000038674 * pow(x,5)) +  (0.00000000022566 * pow(x,4)) +  (-0.00000046518 * pow(x,3)) +  (0.00036292 * pow(x,2)) +  (0.318831 * (x)) + 465.386;
 
 if(target > 0){
 target = target + 500;
@@ -245,44 +540,57 @@ double init_heading = imu2.get_heading();
 if (init_heading > 180) {
     init_heading = (360 - init_heading);
 }
+
 double heading_error = 0;
 while(true) {
 
-    
-if(imu2.get_heading() < 180) {
-    heading_error = init_heading - imu2.get_heading();
+    Odometry();
+
+    double position = imu2.get_heading();    
+
+    if (position > 180) {
+    position = position - 360;
 }
-else {
-heading_error = ((360 - imu2.get_heading()) - init_heading);
-}
 
-heading_error = heading_error * 10;
-
-encoderAvg = (LF.get_position() + RF.get_position()) / 2;
-voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
-
-chasMove (voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error);
-if (target > 0 ){
-    if ((encoderAvg - (target - 500)) > 0){
-        over = true;
+if((init_heading < 0) && (position > 0)) {
+    if((position - init_heading) >= 180) {
+        init_heading = init_heading + 360;
+        position = imu2.get_heading();
     }
-} else {
-    if (((target+500) - encoderAvg) > 0){
-        over = true;
+} else if ((init_heading > 0) && (position < 0)) {
+    if((init_heading - position) >= 180) {
+        position = imu2.get_heading();
     }
 }
-if (over || time2 > timeout) {
-   break;
-}
+    setConstants(HEADING_KP, HEADING_KI, HEADING_KD);
+    heading_error = calcPID2(init_heading, position, HEADING_INTEGRAL_KI, HEADING_MAX_INTEGRAL);
+
+    encoderAvg = (LF.get_position() + RF.get_position()) / 2;
+    setConstants(STRAIGHT_KP, STRAIGHT_KI, STRAIGHT_KD);
+    voltage = calcPID(target, encoderAvg, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
+
+    chasMove (voltage + heading_error, voltage + heading_error, voltage + heading_error, voltage - heading_error, voltage - heading_error, voltage - heading_error);
+    if (target > 0 ){
+        if ((encoderAvg - (target - 500)) > 0){
+            over = true;
+        }
+    } else {
+        if (((target+500) - encoderAvg) > 0){
+            over = true;
+        }
+    }
+    if (over || time2 > timeout) {
+    break;
+    }
 
 
 
-if (time2 % 50 == 0) {
-con.print(0,0,"ERROR: %f          ", float(heading_error) );
+    if (time2 % 50 == 0) {
+    con.print(0,0,"ERROR: %f          ", float(heading_error) );
 
-}
-delay(10);
-time2 += 10;
+    }
+    delay(10);
+    time2 += 10;
 }
 
 LF.brake();
@@ -334,7 +642,7 @@ if(position > 180) {
 }
 voltage = calcPID(target, position, TURN_INTEGRAL_KI, TURN_MAX_INTEGRAL);
 
-chasMove(voltage, voltage, -voltage, -voltage);
+chasMove(voltage, voltage, voltage, -voltage, -voltage, -voltage);
 
 if (time2 % 50 == 0) {
 con.print(0,0,"ERROR: %f          ", float(error) );
@@ -344,7 +652,7 @@ con.print(0,0,"ERROR: %f          ", float(error) );
 if(abs(target - position) <= 1) count++; 
 if(count >= 20 || time2 > timeout) {
 
-  //  break;
+   break;
 }
 time2 += 10;
 delay(10);
@@ -411,6 +719,9 @@ void driveTurn2(int target) {
         int timeout = 5000;
 
     while(true) {
+
+        Odometry();
+
         position = imu2.get_heading();
         if(position > 180) {
             position = ((360 - position) * -1);
@@ -435,7 +746,7 @@ void driveTurn2(int target) {
     }        
         voltage = calcPID(target, position, TURN_INTEGRAL_KI, TURN_MAX_INTEGRAL);
 
-        chasMove(voltage, voltage, -voltage, -voltage);
+        chasMove(voltage, voltage, voltage, -voltage, -voltage, -voltage);
 
         if(abs(target -position) <= 1) count++;
         if (count >=20 || time2 > timeout ) {
@@ -450,12 +761,13 @@ con.print(0,0,"ERROR: %f          ", float(error) );
     }
     LF.brake();
     LB.brake();
+    LM.brake();
     RF.brake();
     RB.brake();
+    RM.brake();
 }
 
 void driveArcL(double theta, double radius, int timeout) {
-setConstants(ARC_KP, ARC_KI, ARC_KD);
 double ltarget = 0;
 double rtarget = 0;
 double pi = 3.14159265359;
@@ -463,27 +775,39 @@ double init_heading = imu2.get_heading();
 int count = 0;
 int time = 0;
 resetEncoders();
+
+if(init_heading > 180){
+    init_heading = init_heading - 360;
+}
+
 con.clear();
 ltarget = double((theta / 360) * 2 * pi * radius);
 rtarget = double((theta / 360) * 2 * pi * (radius + 820));
 while (true) {
 
-double heading = imu2.get_heading() - init_heading;
-if (theta > 0) {
-    if (heading > 30) {
-        heading = heading - 360;
+    Odometry();
+
+    double position = imu2.get_heading();
+    if (position > 180) {
+        position = position - 360;
     }
-} else {
-    if (heading > 300){
-        heading = heading - 360;
+
+    if((init_heading < 0) && (position > 0)){
+        if((position - init_heading ) >= 180){
+            init_heading = init_heading + 360;
+            position = imu2.get_heading();
+        }
+    }   else if ((init_heading > 0) && (position < 0)){
+        if((init_heading - position) >= 180){
+            position = imu2.get_heading();
+        }
     }
-}
 
 
 double encoderAvgL = (LB.get_position() + LF.get_position()) /2;
 double encoderAvgr = (RB.get_position() + RF.get_position()) /2;
 
-
+setConstants(ARC_KP, ARC_KI, ARC_KD);
 int voltageL = calcPID(ltarget, encoderAvgL, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
 if(voltageL > 70){
     voltageL = 70;
@@ -497,11 +821,10 @@ if(voltageR > 100){
     voltageR = -100;
 }
 double leftcorrect = (encoderAvgL * 360) / (2 * pi * radius);
-int fix = int(heading + leftcorrect);
-fix = fix * 5;
+setConstants(ARC_HEADING_KP, ARC_HEADING_KI, ARC_HEADING_KD);
+int fix = calcPID3((init_heading - leftcorrect), position, ARC_HEADING_INTEGRAL_KI, ARC_HEADING_MAX_INTEGRAL);
 
-
-chasMove((voltageL - fix), (voltageL - fix), (voltageR + fix), (voltageR + fix));
+chasMove((voltageL + fix), (voltageL + fix), (voltageL + fix), (voltageR - fix), (voltageR - fix), (voltageR - fix));
 if ((abs(ltarget - encoderAvgL) <= 4) && (abs(rtarget - encoderAvgr) >= 4)) count++;
 if (count >= 20 || time > timeout){
     break;
@@ -515,7 +838,6 @@ con.print(0,0, "Target: %f         ", float(voltageR));
 
 void driveArcLF(double theta, double radius, int timeout) {
     bool over = false;
-setConstants(ARC_KP, ARC_KI, ARC_KD);
 double ltarget = 0;
 double rtarget = 0;
 double ltargetFinal = 0;
@@ -525,6 +847,10 @@ double init_heading = imu2.get_heading();
 int count = 0;
 int time = 0;
 resetEncoders();
+    if (init_heading > 180) {
+        init_heading = init_heading - 360;
+}
+
 con.clear();
 
 ltargetFinal = double((theta / 360) * 2 * pi * radius);
@@ -536,22 +862,29 @@ ltarget = double((theta / 360) * 2 * pi * radius);
 rtarget = double((theta / 360) * 2 * pi * (radius + 820));
 while (true) {
 
-double heading = imu2.get_heading() - init_heading;
-if (theta > 0) {
-    if (heading > 30) {
-        heading = heading - 360;
+    Odometry();
+
+double position = imu2.get_heading();
+    if (position > 180) {
+        position = position - 360;
     }
-} else {
-    if (heading > 300){
-        heading = heading - 360;
+
+    if((init_heading < 0) && (position > 0)){
+        if((position - init_heading ) >= 180){
+            init_heading = init_heading + 360;
+            position = imu2.get_heading();
+        }
+    }   else if ((init_heading > 0) && (position < 0)){
+        if((init_heading - position) >= 180){
+            position = imu2.get_heading();
+        }
     }
-}
 
 
 double encoderAvgL = (LB.get_position() + LF.get_position()) /2;
 double encoderAvgr = (RB.get_position() + RF.get_position()) /2;
 
-
+setConstants(ARC_KP, ARC_KI, ARC_KD);
 int voltageL = calcPID(ltarget, encoderAvgL, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
 if(voltageL > 70){
     voltageL = 70;
@@ -565,11 +898,11 @@ if(voltageR > 100){
     voltageR = -100;
 }
 double leftcorrect = (encoderAvgL * 360) / (2 * pi * radius);
-int fix = int(heading + leftcorrect);
-fix = fix * 5;
+setConstants(ARC_HEADING_KP, ARC_HEADING_KI, ARC_HEADING_KD);
+int fix = calcPID3((init_heading - leftcorrect), position, ARC_HEADING_INTEGRAL_KI, ARC_HEADING_MAX_INTEGRAL);
 
 
-chasMove((voltageL - fix), (voltageL - fix), (voltageR + fix), (voltageR + fix));
+chasMove((voltageL + fix), (voltageL + fix), (voltageL + fix), (voltageR - fix), (voltageR - fix), (voltageR - fix));
 if (radius > 0){
     if ((encoderAvgL - ltargetFinal) > 0){
         over = true;
@@ -590,7 +923,6 @@ con.print(0,0, "Target: %f         ", float(voltageR));
 
 }
 void driveArcR(double theta, double radius, int timeout) {
-setConstants(ARC_KP, ARC_KI, ARC_KD);
 double ltarget = 0;
 double rtarget = 0;
 double pi = 3.14159265359;
@@ -598,27 +930,37 @@ double init_heading = imu2.get_heading();
 int count = 0;
 int time = 0;
 resetEncoders();
+if (init_heading > 180) {
+        init_heading = init_heading - 360;
+}
+
 con.clear();
 rtarget = double((theta / 360) * 2 * pi * radius);
 ltarget = double((theta / 360) * 2 * pi * (radius + 820));
 while (true) {
 
-double heading = imu2.get_heading() - init_heading;
-if (theta > 0) {
-    if (heading > 300) {
-        heading = heading - 360;
-    }
-} else {
-    if (heading > 30){
-        heading = heading - 360;
-    }
-}
+    Odometry();
 
+double position = imu2.get_heading();
+    if (position > 180) {
+        position = position - 360;
+    }
+
+    if((init_heading < 0) && (position > 0)){
+        if((position - init_heading ) >= 180){
+            init_heading = init_heading + 360;
+            position = imu2.get_heading();
+        }
+    }   else if ((init_heading > 0) && (position < 0)){
+        if((init_heading - position) >= 180){
+            position = imu2.get_heading();
+        }
+    }
 
 double encoderAvgL = (LB.get_position() + LF.get_position()) /2;
 double encoderAvgr = (RB.get_position() + RF.get_position()) /2;
 
-
+setConstants(ARC_KP, ARC_KI, ARC_KD);
 int voltageL = calcPID(ltarget, encoderAvgL, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
 if(voltageL > 70){
     voltageL = 70;
@@ -632,11 +974,11 @@ if(voltageR > 100){
     voltageR = -100;
 }
 double rightcorrect = (encoderAvgr * 360) / (2 * pi * radius);
-int fix = int(heading - rightcorrect);
-fix = fix * 5;
+setConstants(ARC_HEADING_KP, ARC_HEADING_KI, ARC_HEADING_KD);
+int fix = calcPID3((init_heading + rightcorrect), position, ARC_HEADING_INTEGRAL_KI, ARC_HEADING_MAX_INTEGRAL);
 
 
-chasMove((voltageL - fix), (voltageL - fix), (voltageR + fix), (voltageR + fix));
+chasMove((voltageL + fix), (voltageL + fix), (voltageL + fix), (voltageR - fix), (voltageR - fix), (voltageR - fix));
 if ((abs(ltarget - encoderAvgL) <= 4) && (abs(rtarget - encoderAvgr) >= 4)) count++;
 if (count >= 20 || time > timeout){
     break;
@@ -652,7 +994,6 @@ con.print(0,0, "Target: %f         ", float(voltageR));
 
 void driveArcRF(double theta, double radius, int timeout) {
     bool over = false;
-setConstants(ARC_KP, ARC_KI, ARC_KD);
 double ltarget = 0;
 double rtarget = 0;
 double ltargetFinal = 0;
@@ -675,22 +1016,29 @@ rtarget = double((theta / 360) * 2 * pi * radius);
 ltarget = double((theta / 360) * 2 * pi * (radius + 820));
 while (true) {
 
-double heading = imu2.get_heading() - init_heading;
-if (theta > 0) {
-    if (heading > 300) {
-        heading = heading - 360;
+    Odometry();
+
+double position = imu2.get_heading();
+    if (position > 180) {
+        position = position - 360;
     }
-} else {
-    if (heading > 30){
-        heading = heading - 360;
+
+    if((init_heading < 0) && (position > 0)){
+        if((position - init_heading ) >= 180){
+            init_heading = init_heading + 360;
+            position = imu2.get_heading();
+        }
+    }   else if ((init_heading > 0) && (position < 0)){
+        if((init_heading - position) >= 180){
+            position = imu2.get_heading();
+        }
     }
-}
 
 
 double encoderAvgL = (LB.get_position() + LF.get_position()) /2;
 double encoderAvgr = (RB.get_position() + RF.get_position()) /2;
 
-
+setConstants(ARC_KP, ARC_KI, ARC_KD);
 int voltageL = calcPID(ltarget, encoderAvgL, STRAIGHT_INTEGRAL_KI, STRAIGHT_MAX_INTEGRAL);
 if(voltageL > 70){
     voltageL = 70;
@@ -704,11 +1052,11 @@ if(voltageR > 100){
     voltageR = -100;
 }
 double rightcorrect = (encoderAvgr * 360) / (2 * pi * radius);
-int fix = int(heading - rightcorrect);
-fix = fix * 5;
+setConstants(ARC_HEADING_KP, ARC_HEADING_KI, ARC_HEADING_KD);
+int fix = calcPID3((init_heading + rightcorrect), position, ARC_HEADING_INTEGRAL_KI, ARC_HEADING_MAX_INTEGRAL);
 
 
-chasMove((voltageL - fix), (voltageL - fix), (voltageR + fix), (voltageR + fix));
+chasMove((voltageL + fix), (voltageL + fix), (voltageL + fix), (voltageR - fix), (voltageR - fix), (voltageR - fix));
 if (radius > 0){
         if ((encoderAvgr - (rtargetFinal)) > 0){
             over = true;
@@ -739,7 +1087,7 @@ void driveFollow (){
         pros::vision_object_s_t driver = VIS.get_by_sig(0, 1);
 		int XCOORD = driver.x_middle_coord - 150;
         int voltage = calcPID(0, XCOORD, FOLLOW_INTEGRAL_KI, FOLLOW_MAX_INTEGRAL);
-        chasMove(-voltage, -voltage, voltage, voltage);
+        chasMove(-voltage, -voltage, -voltage, voltage, voltage, voltage);
 
     }
 }

@@ -4,6 +4,7 @@
 #include "pid.h"
 //#include "api.hpp"
 #include "auton.h"
+#include "odometry.h"
 
 using namespace pros;
 using namespace std;
@@ -55,13 +56,19 @@ void disabled() {}
  */
 
 int atn = 0;
+int pressed = 0;
 string autstr;
-
+// This makes it so that holding it doesn't switch auton and only tapping does, quickly or slowly.//
 void competition_initialize(){
 while(true) {
 	if(selec.get_value() == true) {
-		atn ++;
-		delay(350);
+		pressed++;
+	}
+	if(selec.get_value() == false) {
+		pressed = 0;
+	}
+	if (pressed = 1) {
+		atn++;
 	}
 	if(atn == 0) {
 		autstr = "SKILLS";
@@ -182,8 +189,10 @@ int time = 0;
 	    if (tankToggle) {
 		LF.move(con.get_analog(ANALOG_LEFT_Y));
 		LB.move(con.get_analog(ANALOG_LEFT_Y));
+		LM.move(con.get_analog(ANALOG_LEFT_Y));
 		RF.move(con.get_analog(ANALOG_RIGHT_Y));
 		RB.move(con.get_analog(ANALOG_RIGHT_Y));
+		RM.move(con.get_analog(ANALOG_RIGHT_Y));
 		}
 		// LF.move(127);
 		// LB.move(127);
@@ -193,8 +202,10 @@ int time = 0;
 		if (arcToggle) {
 		LF.move(left);
 		LB.move(left);
+		LM.move(left);
 		RF.move(right);
 		RB.move(right);
+		RM.move(right);
 		}
 		if (pistonToggle) {
 		piston1.set_value(true);
@@ -212,16 +223,28 @@ int time = 0;
 		if (con.get_digital_new_press(E_CONTROLLER_DIGITAL_X)) {
 		
 		 //driveStraight(1115);
-		driveFollow();
+		//driveFollow();
 		// driveArcRF(90,500,3500);
 		//  driveStraight2(700);
+		// setPosition(0, 0, 0);
+		// while(true){
+		//  Odometry();
+		//  delay(1);
+		 //}
+		// driveStraight2(2000);
+		// boomerang(-2000, 1000);
+		// boomerang(-3500, 6000);
+		driveTurn2(90);
+		// driveStraight2(1000);
+		// boomerang(0, 0);
+		//driveClamp(-1000, 70);
 		}
 
-		if (time % 50 == 0 && time % 100 != 0 && time % 150 == 0){
+		if (time % 50 == 0 && time % 100 != 0 && time % 150 != 0){
 			con.print(0, 0, "AUTON: %s      ", autstr );
-		} else if (time % 50 == 0 && time % 100 != 0) {
+		} else if (time % 100 == 0 && time % 150 != 0) {
 			con.print(1, 0, "Imu: %f    ", float(imu2.get_heading()));			
-		} else if (time % 50 == 0) {
+		} else if (time % 150 == 0) {
 			con.print(2, 0, "COORD: %f      ", float (XCOORD));
 		}
 
@@ -234,3 +257,5 @@ time += 10;
 		}
 
 }
+
+
